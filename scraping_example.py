@@ -123,7 +123,6 @@ class ImgDownloader(Downloader):
         if self.dry_run:
             while True:
                 url = await download_queue.get()
-                path = self._url2path(url)
                 print(url)
                 download_queue.task_done()
                 await asyncio.sleep(0)
