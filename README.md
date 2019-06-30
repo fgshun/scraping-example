@@ -5,4 +5,5 @@ requests-html と asyncio を使った Web Scraping スクリプトの習作。
 prepare, download, save メソッドによりどのように最初のダウンロード対象を決めるか、
 どうダウンロードしてどのように追加のダウンロード対象を決めるか、どこに保存するかを決められる。
 
-そして HTML 文章を指す URL を渡すと img タグを探してただダウンロードするだけの ImgDownloader をつくってみた。
+そして HTML 文章を指す URL を渡すと img タグを探してただダウンロードするだけの ImgDownloader を、
+保存先がファイルである ImgFileDownloader と SQLite とする ImgSQLiteDownloader をつくってみた。

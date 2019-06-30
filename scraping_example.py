@@ -7,6 +7,7 @@ from typing import Iterable, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import aiofiles
+import aiosqlite
 from requests_html import AsyncHTMLSession, HTMLSession
 
 logger = logging.getLogger(__name__)
@@ -46,17 +47,17 @@ class Downloader(abc.ABC):
         save_queue_join = asyncio.create_task(save_queue.join())
 
         done, pending = await asyncio.wait(download_tasks | save_tasks | {download_queue_join}, return_when=asyncio.FIRST_COMPLETED)
-        if download_queue_join not in done:
+        if done - {download_queue_join}:
             raise Error('raise Exception for download or save method. stop run method.')
         for task in download_tasks:
             task.cancel()
-        await save_queue.join()
+        await asyncio.gather(*download_tasks, return_exceptions=True)
         done, pending = await asyncio.wait(save_tasks | {save_queue_join}, return_when=asyncio.FIRST_COMPLETED)
-        if save_queue_join not in done:
+        if done - {save_queue_join}:
             raise Error('raise Exception for save method. stop run method.')
         for task in save_tasks:
             task.cancel()
-        await asyncio.gather(*(download_tasks | save_tasks), return_exceptions=True)
+        await asyncio.gather(*save_tasks, return_exceptions=True)
 
     @abc.abstractmethod
     def prepare(self, download_queue: asyncio.Queue) -> None:
@@ -122,24 +123,27 @@ class ImgDownloader(Downloader):
         if self.dry_run:
             while True:
                 url = await download_queue.get()
-                path = self.url2path(url)
-                print(f'{url} -> {path}')
+                path = self._url2path(url)
+                print(url)
                 download_queue.task_done()
                 await asyncio.sleep(0)
         else:
             return await super().download(download_queue, save_queue)
 
-    def url2path(self, url):
+
+class ImgFileDownloader(ImgDownloader):
+    def _url2path(self, url):
         # FIXME
         name = url.rsplit('/')[-1]
         path = self.save_dir / Path(name)
         return path
 
     async def save(self, save_queue: asyncio.Queue) -> None:
+        self.save_dir.mkdir(exist_ok=True)
+
         while True:
             url, data = await save_queue.get()
-            path = self.url2path(url)
-            path.parent.mkdir(exist_ok=True)
+            path = self._url2path(url)
 
             logger.debug('save: %s', path)
             async with aiofiles.open(path, 'wb') as f:
@@ -148,6 +152,25 @@ class ImgDownloader(Downloader):
 
             save_queue.task_done()
             await asyncio.sleep(0)
+
+
+class ImgSQLiteDownloader(ImgDownloader):
+    async def save(self, save_queue: asyncio.Queue) -> None:
+        db_path = self.save_dir / 'img.sqlite'
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute('CREATE TABLE IF NOT EXISTS img (url TEXT PRIMARY KEY, data BLOB NOT NULL)')
+            await db.commit()
+
+            while True:
+                url, data = await save_queue.get()
+
+                logger.debug('save: %s', url)
+                await db.execute('INSERT OR REPLACE INTO img (url, data) VALUES (?, ?)', (url, data))
+                await db.commit()
+                logger.info('saved: %s', url)
+
+                save_queue.task_done()
+                await asyncio.sleep(0)
 
 
 async def main():
@@ -162,18 +185,25 @@ async def main():
     parser.add_argument('--concurrent', type=int, default=3)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--save-dir', type=lambda p: Path(p).resolve(), default=Path(sys.argv[0]).resolve().parent)
+
+    modes: DICT[str, ImgDownloader] = {
+        'file': ImgFileDownloader,
+        'sqlite': ImgSQLiteDownloader,
+    }
+    parser.add_argument('--mode', choices=list(modes), default='file')
     args = parser.parse_args()
 
     urls: Iterable[str] = args.urls
     concurrent: int = args.concurrent
     save_dir: Path = args.save_dir
     dry_run: bool = args.dry_run
+    downloader: ImgDownloader = modes[args.mode]
 
     started_at = time.monotonic()
-    await ImgDownloader(save_dir=save_dir,
-                        concurrent=concurrent,
-                        base_urls=urls,
-                        dry_run=dry_run).run()
+    await downloader(save_dir=save_dir,
+                     concurrent=concurrent,
+                     base_urls=urls,
+                     dry_run=dry_run).run()
     logger.info('time: %.2f sec', time.monotonic() - started_at)
 
 
