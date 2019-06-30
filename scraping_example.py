@@ -94,7 +94,7 @@ class ImgDownloader(Downloader):
     base_urls: Iterable[str]
     dry_run: bool
 
-    def __init__(self, *, save_dir: Path, concurrent: int = 3,
+    def __init__(self, *, concurrent: int = 3, save_dir: Path,
                  base_urls: Iterable[str], dry_run: bool = False) -> None:
         super().__init__(concurrent=concurrent)
         self.save_dir = save_dir
@@ -138,9 +138,12 @@ class ImgFileDownloader(ImgDownloader):
         path = self.save_dir / Path(name)
         return path
 
-    async def save(self, save_queue: asyncio.Queue) -> None:
+    async def run(self):
         self.save_dir.mkdir(exist_ok=True)
 
+        await super().run()
+
+    async def save(self, save_queue: asyncio.Queue) -> None:
         while True:
             url, data = await save_queue.get()
             path = self._url2path(url)
@@ -155,18 +158,34 @@ class ImgFileDownloader(ImgDownloader):
 
 
 class ImgSQLiteDownloader(ImgDownloader):
-    async def save(self, save_queue: asyncio.Queue) -> None:
-        db_path = self.save_dir / 'img.sqlite'
-        async with aiosqlite.connect(db_path) as db:
-            await db.execute('CREATE TABLE IF NOT EXISTS img (url TEXT PRIMARY KEY, data BLOB NOT NULL)')
-            await db.commit()
+    def __init__(self, *, concurrent: int = 3, save_dir: Path,
+                 base_urls: Iterable[str], dry_run: bool = False) -> None:
+        super().__init__(concurrent=concurrent,
+                         save_dir=save_dir,
+                         base_urls=base_urls,
+                         dry_run=dry_run)
 
+    def conn(self):
+        db_path = str(self.save_dir / 'img.sqlite')
+        return aiosqlite.connect(db_path)
+
+    async def run(self):
+        self.save_dir.mkdir(exist_ok=True)
+
+        async with self.conn() as conn:
+            await conn.execute('CREATE TABLE IF NOT EXISTS img (url TEXT PRIMARY KEY, data BLOB NOT NULL)')
+            await conn.commit()
+
+        await super().run()
+
+    async def save(self, save_queue: asyncio.Queue) -> None:
+        async with self.conn() as conn:
             while True:
                 url, data = await save_queue.get()
 
                 logger.debug('save: %s', url)
-                await db.execute('INSERT OR REPLACE INTO img (url, data) VALUES (?, ?)', (url, data))
-                await db.commit()
+                await conn.execute('INSERT OR REPLACE INTO img (url, data) VALUES (?, ?)', (url, data))
+                await conn.commit()
                 logger.info('saved: %s', url)
 
                 save_queue.task_done()
