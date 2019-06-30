@@ -44,7 +44,6 @@ class Downloader(abc.ABC):
         download_tasks = {asyncio.create_task(self.download(download_queue, save_queue)) for _ in range(num_download_task)}
         save_tasks = {asyncio.create_task(self.save(save_queue)) for _ in range(num_save_task)}
         download_queue_join = asyncio.create_task(download_queue.join())
-        save_queue_join = asyncio.create_task(save_queue.join())
 
         done, pending = await asyncio.wait(download_tasks | save_tasks | {download_queue_join}, return_when=asyncio.FIRST_COMPLETED)
         if done - {download_queue_join}:
@@ -52,6 +51,8 @@ class Downloader(abc.ABC):
         for task in download_tasks:
             task.cancel()
         await asyncio.gather(*download_tasks, return_exceptions=True)
+
+        save_queue_join = asyncio.create_task(save_queue.join())
         done, pending = await asyncio.wait(save_tasks | {save_queue_join}, return_when=asyncio.FIRST_COMPLETED)
         if done - {save_queue_join}:
             raise Error('raise Exception for save method. stop run method.')
