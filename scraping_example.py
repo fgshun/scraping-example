@@ -28,13 +28,13 @@ class Error(Exception):
 class Downloader(abc.ABC):
     concurrent: int
 
-    def __init__(self, *, concurrent: int = 3) -> None:
+    def __init__(self, *, concurrent: int = 3, save_concurrent: int = 3) -> None:
         self.concurrent = concurrent
+        self.save_concurrent = save_concurrent
 
     async def run(self) -> None:
         num_download_task = self.concurrent
-        # TODO: add num_save_task parameter
-        num_save_task = num_download_task
+        num_save_task = self.save_concurrent
 
         download_queue: asyncio.Queue = asyncio.Queue()
         save_queue: asyncio.Queue = asyncio.Queue(num_save_task)
@@ -94,9 +94,12 @@ class ImgDownloader(Downloader):
     base_urls: Iterable[str]
     dry_run: bool
 
-    def __init__(self, *, concurrent: int = 3, save_dir: Path,
+    def __init__(self, *,
+                 concurrent: int = 3,
+                 save_concurrent: int = 3,
+                 save_dir: Path,
                  base_urls: Iterable[str], dry_run: bool = False) -> None:
-        super().__init__(concurrent=concurrent)
+        super().__init__(concurrent=concurrent, save_concurrent=save_concurrent)
         self.save_dir = save_dir
         self.base_urls = base_urls
         self.dry_run = dry_run
@@ -158,9 +161,14 @@ class ImgFileDownloader(ImgDownloader):
 
 
 class ImgSQLiteDownloader(ImgDownloader):
-    def __init__(self, *, concurrent: int = 3, save_dir: Path,
-                 base_urls: Iterable[str], dry_run: bool = False) -> None:
+    def __init__(self, *,
+                 concurrent: int = 3,
+                 save_concurrent: int = 3,
+                 save_dir: Path,
+                 base_urls: Iterable[str],
+                 dry_run: bool = False) -> None:
         super().__init__(concurrent=concurrent,
+                         save_concurrent=save_concurrent,
                          save_dir=save_dir,
                          base_urls=base_urls,
                          dry_run=dry_run)
@@ -202,6 +210,7 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('urls', nargs='+')
     parser.add_argument('--concurrent', type=int, default=3)
+    parser.add_argument('--save-concurrent', type=int, default=3)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--save-dir', type=lambda p: Path(p).resolve(), default=Path(sys.argv[0]).resolve().parent)
 
@@ -214,6 +223,7 @@ async def main():
 
     urls: Iterable[str] = args.urls
     concurrent: int = args.concurrent
+    save_concurrent: int = args.save_concurrent
     save_dir: Path = args.save_dir
     dry_run: bool = args.dry_run
     downloader: ImgDownloader = modes[args.mode]
@@ -221,6 +231,7 @@ async def main():
     started_at = time.monotonic()
     await downloader(save_dir=save_dir,
                      concurrent=concurrent,
+                     save_concurrent=save_concurrent,
                      base_urls=urls,
                      dry_run=dry_run).run()
     logger.info('time: %.2f sec', time.monotonic() - started_at)
