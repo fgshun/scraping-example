@@ -10,6 +10,9 @@ import aiofiles
 import aiosqlite
 from requests_html import AsyncHTMLSession, HTMLSession
 
+__version__ = '0.0.1'
+
+
 logger = logging.getLogger(__name__)
 
 
