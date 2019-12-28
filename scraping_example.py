@@ -27,9 +27,12 @@ class Error(Exception):
 
 class Downloader(abc.ABC):
     concurrent: int
+    download_queue: asyncio.Queue
+    save_queue: asyncio.Queue
 
     def __init__(self, *, concurrent: int = 3) -> None:
         self.concurrent = concurrent
+        self.download_queue = asyncio.Queue()
 
     async def run(self) -> None:
         num_download_task = self.concurrent
