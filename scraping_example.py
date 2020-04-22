@@ -3,7 +3,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, closing
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Union
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import aiofiles
@@ -32,11 +32,13 @@ class Downloader(abc.ABC):
     _concurrent: int
     download_queue: asyncio.Queue
     save_queue: asyncio.Queue
+    timeout: Union[float, Tuple[float, float]]
 
-    def __init__(self, *, concurrent: int = 3, save_concurrent: int = 3) -> None:
+    def __init__(self, *, concurrent: int = 3, save_concurrent: int = 3, timeout: Union[float, Tuple[float, float]] = (3.05, 27)) -> None:
         self._concurrent = concurrent
         self.download_queue: asyncio.Queue = asyncio.Queue()
         self.save_queue: asyncio.Queue = asyncio.Queue(save_concurrent)
+        self.timeout = timeout
 
     @property
     def concurrent(self) -> int:
@@ -79,7 +81,7 @@ class Downloader(abc.ABC):
                 url = await self.download_queue.get()
 
                 logger.debug('download: %s', url)
-                res = await session.get(url, timeout=10.0)
+                res = await session.get(url, timeout=self.timeout)
                 res.raise_for_status()
                 await self.save_queue.put((url, res.content))
                 logger.info('downloaded: %s', url)
