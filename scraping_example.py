@@ -149,7 +149,7 @@ class ImgFileDownloader(ImgDownloader):
         path = self.save_dir / Path(name)
         return path
 
-    async def run(self):
+    async def run(self) -> None:
         self.save_dir.mkdir(exist_ok=True)
 
         await super().run()
@@ -185,7 +185,7 @@ class ImgSQLiteDownloader(ImgDownloader):
         db_path = str(self.save_dir / 'img.sqlite')
         return aiosqlite.connect(db_path)
 
-    async def run(self):
+    async def run(self) -> None:
         self.save_dir.mkdir(exist_ok=True)
 
         async with self.conn() as conn:
