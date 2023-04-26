@@ -10,7 +10,7 @@ import aiofiles
 import aiosqlite
 from requests_html import AsyncHTMLSession, HTMLSession
 
-__version__ = '0.0.1'
+__version__ = '0.1.0'
 
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class Downloader(abc.ABC):
         return self.save_queue.maxsize
 
     async def run(self) -> None:
-        self.prepare()
+        await self.prepare()
 
         download_tasks = {asyncio.create_task(self.download()) for _ in range(self.concurrent)}
         save_tasks = {asyncio.create_task(self.save()) for _ in range(self.save_concurrent)}
@@ -71,7 +71,7 @@ class Downloader(abc.ABC):
         await asyncio.gather(*save_tasks, return_exceptions=True)
 
     @abc.abstractmethod
-    def prepare(self) -> None:
+    async def prepare(self) -> None:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -114,11 +114,11 @@ class ImgDownloader(Downloader):
         self.base_urls = base_urls
         self.dry_run = dry_run
 
-    def prepare(self) -> None:
+    async def prepare(self) -> None:
         image_src_set = set()
-        with closing(HTMLSession()) as session:
+        async with aclosing(AsyncHTMLSession()) as session:
             for base_url in self.base_urls:
-                res = session.get(base_url)
+                res = await session.get(base_url)
 
                 for img in res.html.find('img'):
                     src = img.attrs['src']
